@@ -40,7 +40,7 @@ Use exactly these fields:
 - "category_focus": the product category being pushed (e.g. "apparel", "beauty", "homeware", "seasonal"). If unclear, use "General".
 - "hero_theme": the hero product or campaign theme in a short phrase.
 - "hook": the emotional or tactical angle (e.g. "urgency", "price-led", "lifestyle", "clearance", "new arrival").
-- "notable": one plain-English sentence describing what stands out. Keep it factual and grounded in the text.
+- "notable": one factual sentence describing the dominant campaign, secondary promotional themes and the main category emphasis. Distinguish campaign promotions from persistent site-wide utility offers.
 
 If the text is empty, junk, or unreadable, set "primary_offer" to "No readable content" and the other analysis fields to "N/A"."""
 
