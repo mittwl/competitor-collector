@@ -18,11 +18,7 @@ def encode_file(path: str) -> str:
 
 
 def main() -> None:
-    with open(
-        OBSERVATIONS_FILE,
-        "r",
-        encoding="utf-8",
-    ) as file:
+    with open(OBSERVATIONS_FILE, "r", encoding="utf-8") as file:
         observations = json.load(file)
 
     captures = []
@@ -31,16 +27,11 @@ def main() -> None:
         if not file_name.lower().endswith(".png"):
             continue
 
-        file_path = os.path.join(
-            SCREENSHOTS_DIR,
-            file_name,
-        )
-
-        source = os.path.splitext(file_name)[0]
+        file_path = os.path.join(SCREENSHOTS_DIR, file_name)
 
         captures.append(
             {
-                "source": source,
+                "source": os.path.splitext(file_name)[0],
                 "fileName": file_name,
                 "contentType": "image/png",
                 "contentBase64": encode_file(file_path),
@@ -49,7 +40,7 @@ def main() -> None:
 
     run_date = datetime.now(
         ZoneInfo("Pacific/Auckland")
-    ).strftime("%Y-%m-%d")
+    ).isoformat(timespec="seconds")
 
     delivery = {
         "runDate": run_date,
@@ -57,16 +48,8 @@ def main() -> None:
         "captures": captures,
     }
 
-    with open(
-        OUTPUT_FILE,
-        "w",
-        encoding="utf-8",
-    ) as file:
-        json.dump(
-            delivery,
-            file,
-            ensure_ascii=False,
-        )
+    with open(OUTPUT_FILE, "w", encoding="utf-8") as file:
+        json.dump(delivery, file, ensure_ascii=False)
 
     print(
         f"Created {OUTPUT_FILE} with "
