@@ -1,0 +1,59 @@
+# .github/workflows/competitor-watch.yml
+#
+# Weekly competitor watch: capture -> analyse (Gemini) -> digest.
+# The Gemini API key lives in GitHub Secrets, never in this file.
+
+name: Competitor Watch
+
+on:
+  schedule:
+    # 08:00 Monday NZ time. Cron is UTC, so this is Sunday 20:00 UTC.
+    - cron: "0 20 * * 0"
+  workflow_dispatch: {}   # lets you run it manually from the Actions tab
+
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          pip install requests playwright
+          playwright install chromium
+
+      # --- CAPTURE -------------------------------------------------------
+      # Your existing crawler/screenshot logic goes here. Its job is to
+      # produce captured.json = [{ "source": "...", "content": "..." }, ...]
+      - name: Capture competitor content
+        run: python capture_competitors.py
+
+      # --- ANALYSE -------------------------------------------------------
+      - name: Analyse with Gemini
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: python analyse_competitors.py
+
+      # --- DIGEST --------------------------------------------------------
+      # Hand observations.json to your Power Automate digest flow via its
+      # HTTP trigger. Store the flow URL as a secret too.
+      - name: Send digest to Power Automate
+        env:
+          FLOW_URL: ${{ secrets.DIGEST_FLOW_URL }}
+        run: |
+          curl -X POST "$FLOW_URL" \
+            -H "Content-Type: application/json" \
+            --data-binary @observations.json
+
+      # Optional: keep a copy in the repo/run artifacts for your own eyes
+      - name: Upload observations artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: observations
+          path: observations.json
