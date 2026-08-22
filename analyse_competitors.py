@@ -36,7 +36,7 @@ INSTRUCTION = """You are analysing a single piece of competitor marketing conten
 
 Use exactly these fields:
 - "source": the identifier passed to you for this content
-- "primary_offer": the main promotional offer or mechanic, in a few words (e.g. "20% off storewide", "spend $50 get $10"). If none is present, use "No clear offer".
+- "primary_offer": the dominant campaign or hero promotion shown in the main page content. Prioritise hero banners, major promotional headings and repeated campaign messages over navigation bars, delivery thresholds, loyalty messages and newsletter sign-up offers. Use delivery or sign-up incentives only if no campaign promotion is present.
 - "category_focus": the product category being pushed (e.g. "apparel", "beauty", "homeware", "seasonal"). If unclear, use "General".
 - "hero_theme": the hero product or campaign theme in a short phrase.
 - "hook": the emotional or tactical angle (e.g. "urgency", "price-led", "lifestyle", "clearance", "new arrival").
