@@ -56,31 +56,85 @@ def clean_text(raw: str) -> str:
 
 
 def capture_one(page, source: str, url: str) -> dict:
-    """Load one URL, wait for content, return {source, content}."""
+    """Load one URL, capture diagnostics, and return visible page text."""
+
+    clean_url = url.split("?")[0]
+    os.makedirs(SHOT_DIR, exist_ok=True)
+
     try:
-        # strip tracking params (e.g. ?srsltid=...) for a clean fetch
-        clean_url = url.split("?")[0]
-        page.goto(clean_url, wait_until="networkidle", timeout=45000)
-        page.wait_for_timeout(2000)
-        # nudge lazy-loaded content (retail SPAs often only render deals on scroll)
+        print(f"  Navigating to {clean_url}")
+
+        response = page.goto(
+            clean_url,
+            wait_until="domcontentloaded",
+            timeout=45000,
+        )
+
+        if response:
+            print(f"  {source}: HTTP {response.status}")
+
+        # Allow JavaScript applications and promotional content to render.
+        page.wait_for_timeout(5000)
+
+        # Trigger lazy-loaded homepage content.
         page.mouse.wheel(0, 2000)
-        page.wait_for_timeout(2000)
+        page.wait_for_timeout(2500)
         page.mouse.wheel(0, -2000)
-        page.wait_for_timeout(1000)
+        page.wait_for_timeout(1500)
 
-        os.makedirs(SHOT_DIR, exist_ok=True)
-        page.screenshot(path=os.path.join(SHOT_DIR, f"{source}.png"), full_page=True)
+        # Save the screenshot before extracting text.
+        page.screenshot(
+            path=os.path.join(SHOT_DIR, f"{source}.png"),
+            full_page=True,
+        )
 
-        # innerText gives rendered, visible text only (not raw HTML/hidden nodes)
-        raw = page.inner_text("body")
+        raw = page.inner_text("body", timeout=10000)
         content = clean_text(raw)
-        print(f"  {source}: captured {len(content)} chars")
-        return {"source": source, "content": content}
 
-    except Exception as e:
-        # never let one bad page kill the run; flag it and move on
-        print(f"  {source}: FAILED ({e})")
-        return {"source": source, "content": ""}
+        print(f"  {source}: captured {len(content)} chars")
+        print(f"  {source}: title = {page.title()}")
+        print(f"  {source}: final URL = {page.url}")
+
+        return {
+            "source": source,
+            "content": content,
+        }
+
+    except Exception as error:
+        print(f"  {source}: FAILED ({error})")
+
+        # Still capture the current browser state when possible.
+        try:
+            page.screenshot(
+                path=os.path.join(SHOT_DIR, f"{source}_failed.png"),
+                full_page=True,
+            )
+            print(f"  {source}: saved failure screenshot")
+        except Exception as screenshot_error:
+            print(
+                f"  {source}: could not save failure screenshot "
+                f"({screenshot_error})"
+            )
+
+        try:
+            fallback_text = page.inner_text("body", timeout=5000)
+            fallback_content = clean_text(fallback_text)
+
+            print(
+                f"  {source}: recovered "
+                f"{len(fallback_content)} chars after navigation failure"
+            )
+
+            return {
+                "source": source,
+                "content": fallback_content,
+            }
+
+        except Exception:
+            return {
+                "source": source,
+                "content": "",
+            }
 
 
 def main() -> None:
