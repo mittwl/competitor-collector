@@ -60,8 +60,12 @@ def capture_one(page, source: str, url: str) -> dict:
         # strip tracking params (e.g. ?srsltid=...) for a clean fetch
         clean_url = url.split("?")[0]
         page.goto(clean_url, wait_until="networkidle", timeout=45000)
-        # give lazy banners/carousels a moment to populate
-        page.wait_for_timeout(3000)
+        page.wait_for_timeout(2000)
+        # nudge lazy-loaded content (retail SPAs often only render deals on scroll)
+        page.mouse.wheel(0, 2000)
+        page.wait_for_timeout(2000)
+        page.mouse.wheel(0, -2000)
+        page.wait_for_timeout(1000)
 
         os.makedirs(SHOT_DIR, exist_ok=True)
         page.screenshot(path=os.path.join(SHOT_DIR, f"{source}.png"), full_page=True)
