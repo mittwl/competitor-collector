@@ -32,16 +32,26 @@ jobs:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: python analyse_competitors.py
 
-      - name: Send digest to Power Automate
+      - name: Prepare delivery package
+        run: python prepare_delivery.py   
+
+      - name: Send archive and digest to Power Automate
         env:
           FLOW_URL: ${{ secrets.DIGEST_FLOW_URL }}
         run: |
           curl --fail-with-body \
             --request POST \
             --header "Content-Type: application/json" \
-            --data-binary @observations.json \
+            --data-binary @delivery.json \
             "$FLOW_URL"
-
+            
+      - name: Upload delivery package
+        uses: actions/upload-artifact@v4
+        with:
+          name: delivery-package
+          path: delivery.json
+          if-no-files-found: error
+          
       - name: Upload observations
         uses: actions/upload-artifact@v4
         with:
