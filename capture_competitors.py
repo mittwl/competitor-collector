@@ -17,8 +17,8 @@ import json
 import os
 import re
 import sys
-from playwright_stealth import Stealth
 from playwright.sync_api import sync_playwright
+from playwright_stealth import Stealth
 
 TARGETS_FILE = "targets.json"
 OUTPUT_FILE = "captured.json"
