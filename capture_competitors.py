@@ -156,15 +156,7 @@ def main() -> None:
             ),
             viewport={"width": 1440, "height": 900},
         )
-        page = context.new_page()
-
-        for t in targets:
-            source = t.get("source", "unknown")
-            url = t.get("url", "")
-            print(f"Capturing {source} -> {url}")
-            captured.append(capture_one(page, source, url))
-
-        browser.close()
+    
 
     with open(OUTPUT_FILE, "w", encoding="utf-8") as f:
         json.dump(captured, f, indent=2, ensure_ascii=False)
