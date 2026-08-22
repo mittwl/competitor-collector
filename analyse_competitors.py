@@ -21,7 +21,7 @@ import requests
 # ----------------------------------------------------------------------
 # Config
 # ----------------------------------------------------------------------
-MODEL = "gemini-2.0-flash"  # fast + cheap; fine for simple observations
+MODEL = "gemini-2.5-flash"  
 API_URL = (
     f"https://generativelanguage.googleapis.com/v1beta/models/{MODEL}:generateContent"
 )
