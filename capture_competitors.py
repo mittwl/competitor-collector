@@ -17,6 +17,7 @@ import json
 import os
 import re
 import sys
+from playwright_stealth import Stealth
 from playwright.sync_api import sync_playwright
 
 TARGETS_FILE = "targets.json"
@@ -90,7 +91,7 @@ def main() -> None:
         targets = json.load(f)
 
     captured = []
-    with sync_playwright() as p:
+    with Stealth().use_sync(sync_playwright()) as p:
         browser = p.chromium.launch(headless=True)
         # a real-looking UA reduces the odds of being served a stripped page
         context = browser.new_context(
