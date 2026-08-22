@@ -1,65 +1,63 @@
 #!/usr/bin/env python3
-"""
-capture_competitors.py
-----------------------
-Renders each competitor page with a real browser (Playwright/Chromium) so
-JavaScript-loaded banners and deals actually appear, then extracts clean
-visible text and saves it for the analysis step.
-
-Reads:  targets.json      -> [{ "source": "...", "url": "..." }, ...]
-Writes: captured.json     -> [{ "source": "...", "content": "..." }, ...]
-
-Also drops a full-page screenshot per source into ./screenshots/ for your
-own eyes in the digest folder. The analysis step only uses the text.
-"""
 
 import json
 import os
 import re
 import sys
+
 from playwright.sync_api import sync_playwright
 from playwright_stealth import Stealth
+
 
 TARGETS_FILE = "targets.json"
 OUTPUT_FILE = "captured.json"
 SHOT_DIR = "screenshots"
 
-# Nav/boilerplate lines worth trimming so the model sees signal, not chrome.
-# Kept deliberately light: over-filtering risks binning real offers.
 NOISE_PATTERNS = [
     r"^\s*(home|menu|search|sign in|log in|register|my account|cart|basket|wishlist)\s*$",
     r"^\s*(cookie|we use cookies|accept all cookies|privacy|terms).*$",
     r"^\s*(skip to (main )?content)\s*$",
 ]
-NOISE_RE = [re.compile(p, re.IGNORECASE) for p in NOISE_PATTERNS]
+
+NOISE_RE = [
+    re.compile(pattern, re.IGNORECASE)
+    for pattern in NOISE_PATTERNS
+]
 
 
 def clean_text(raw: str) -> str:
-    """Collapse whitespace and drop obvious nav/cookie noise, line by line."""
-    lines = [ln.strip() for ln in raw.splitlines()]
+    """Remove obvious page noise and repeated lines."""
+
+    lines = [
+        line.strip()
+        for line in raw.splitlines()
+    ]
+
     kept = []
     seen = set()
-    for ln in lines:
-        if not ln:
+
+    for line in lines:
+        if not line:
             continue
-        if any(rx.match(ln) for rx in NOISE_RE):
+
+        if any(pattern.match(line) for pattern in NOISE_RE):
             continue
-        # de-duplicate repeated nav labels that appear many times
-        key = ln.lower()
+
+        key = line.lower()
+
         if key in seen:
             continue
+
         seen.add(key)
-        kept.append(ln)
-    text = "\n".join(kept)
-    # hard cap so a huge page doesn't bloat the API call; top of page = the good bit
-    return text[:6000]
+        kept.append(line)
+
+    return "\n".join(kept)[:6000]
 
 
 def capture_one(page, source: str, url: str) -> dict:
-    """Load one URL, capture diagnostics, and return visible page text."""
+    """Load one competitor page and extract visible text."""
 
     clean_url = url.split("?")[0]
-    os.makedirs(SHOT_DIR, exist_ok=True)
 
     try:
         print(f"  Navigating to {clean_url}")
@@ -73,27 +71,37 @@ def capture_one(page, source: str, url: str) -> dict:
         if response:
             print(f"  {source}: HTTP {response.status}")
 
-        # Allow JavaScript applications and promotional content to render.
+        # Allow JavaScript-driven content to render.
         page.wait_for_timeout(5000)
 
         # Trigger lazy-loaded homepage content.
         page.mouse.wheel(0, 2000)
         page.wait_for_timeout(2500)
+
         page.mouse.wheel(0, -2000)
         page.wait_for_timeout(1500)
 
-        # Save the screenshot before extracting text.
+        screenshot_path = os.path.join(
+            SHOT_DIR,
+            f"{source}.png",
+        )
+
         page.screenshot(
-            path=os.path.join(SHOT_DIR, f"{source}.png"),
+            path=screenshot_path,
             full_page=True,
         )
 
-        raw = page.inner_text("body", timeout=10000)
-        content = clean_text(raw)
+        raw_text = page.inner_text(
+            "body",
+            timeout=10000,
+        )
+
+        content = clean_text(raw_text)
 
         print(f"  {source}: captured {len(content)} chars")
         print(f"  {source}: title = {page.title()}")
         print(f"  {source}: final URL = {page.url}")
+        print(f"  {source}: screenshot = {screenshot_path}")
 
         return {
             "source": source,
@@ -103,34 +111,53 @@ def capture_one(page, source: str, url: str) -> dict:
     except Exception as error:
         print(f"  {source}: FAILED ({error})")
 
-        # Still capture the current browser state when possible.
+        failure_path = os.path.join(
+            SHOT_DIR,
+            f"{source}_failed.png",
+        )
+
         try:
             page.screenshot(
-                path=os.path.join(SHOT_DIR, f"{source}_failed.png"),
+                path=failure_path,
                 full_page=True,
             )
-            print(f"  {source}: saved failure screenshot")
+
+            print(
+                f"  {source}: saved failure screenshot "
+                f"to {failure_path}"
+            )
+
         except Exception as screenshot_error:
             print(
                 f"  {source}: could not save failure screenshot "
                 f"({screenshot_error})"
             )
 
+        # A page can contain usable text even when navigation times out.
         try:
-            fallback_text = page.inner_text("body", timeout=5000)
-            fallback_content = clean_text(fallback_text)
+            raw_text = page.inner_text(
+                "body",
+                timeout=5000,
+            )
+
+            content = clean_text(raw_text)
 
             print(
                 f"  {source}: recovered "
-                f"{len(fallback_content)} chars after navigation failure"
+                f"{len(content)} chars after failure"
             )
 
             return {
                 "source": source,
-                "content": fallback_content,
+                "content": content,
             }
 
-        except Exception:
+        except Exception as extraction_error:
+            print(
+                f"  {source}: could not recover page text "
+                f"({extraction_error})"
+            )
+
             return {
                 "source": source,
                 "content": "",
@@ -139,29 +166,94 @@ def capture_one(page, source: str, url: str) -> dict:
 
 def main() -> None:
     if not os.path.exists(TARGETS_FILE):
-        sys.exit(f"ERROR: {TARGETS_FILE} not found. Create your list of targets.")
+        sys.exit(
+            f"ERROR: {TARGETS_FILE} was not found."
+        )
 
-    with open(TARGETS_FILE, "r", encoding="utf-8") as f:
-        targets = json.load(f)
+    with open(TARGETS_FILE, "r", encoding="utf-8") as file:
+        targets = json.load(file)
+
+    print(f"Loaded {len(targets)} targets from {TARGETS_FILE}")
+
+    if not targets:
+        sys.exit(
+            f"ERROR: {TARGETS_FILE} contains no targets."
+        )
+
+    os.makedirs(
+        SHOT_DIR,
+        exist_ok=True,
+    )
 
     captured = []
-    with Stealth().use_sync(sync_playwright()) as p:
-        browser = p.chromium.launch(headless=True)
-        # a real-looking UA reduces the odds of being served a stripped page
+
+    with Stealth().use_sync(sync_playwright()) as playwright:
+        browser = playwright.chromium.launch(
+            headless=True,
+        )
+
         context = browser.new_context(
             user_agent=(
                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
                 "AppleWebKit/537.36 (KHTML, like Gecko) "
-                "Chrome/120.0.0.0 Safari/537.36"
+                "Chrome/151.0.0.0 Safari/537.36"
             ),
-            viewport={"width": 1440, "height": 900},
+            viewport={
+                "width": 1440,
+                "height": 900,
+            },
+            locale="en-NZ",
+            timezone_id="Pacific/Auckland",
         )
-    
 
-    with open(OUTPUT_FILE, "w", encoding="utf-8") as f:
-        json.dump(captured, f, indent=2, ensure_ascii=False)
+        for target in targets:
+            source = target.get(
+                "source",
+                "unknown",
+            )
 
-    print(f"\nDone. Wrote {len(captured)} sources to {OUTPUT_FILE}")
+            url = target.get(
+                "url",
+                "",
+            )
+
+            if not url:
+                print(
+                    f"Skipping {source}: no URL provided"
+                )
+                continue
+
+            print(f"Capturing {source} -> {url}")
+
+            page = context.new_page()
+
+            try:
+                result = capture_one(
+                    page,
+                    source,
+                    url,
+                )
+
+                captured.append(result)
+
+            finally:
+                page.close()
+
+        context.close()
+        browser.close()
+
+    with open(OUTPUT_FILE, "w", encoding="utf-8") as file:
+        json.dump(
+            captured,
+            file,
+            indent=2,
+            ensure_ascii=False,
+        )
+
+    print(
+        f"Done. Wrote {len(captured)} sources "
+        f"to {OUTPUT_FILE}"
+    )
 
 
 if __name__ == "__main__":
