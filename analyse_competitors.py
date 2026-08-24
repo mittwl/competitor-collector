@@ -34,7 +34,7 @@ import requests
 MODEL = "gemini-2.5-flash"
 
 API_URL = (
-    f"https://generativelanguage.googleapis.com/v1beta/"
+    "https://generativelanguage.googleapis.com/v1beta/"
     f"models/{MODEL}:generateContent"
 )
 
@@ -45,6 +45,9 @@ SCREENSHOTS_DIR = "screenshots"
 # Gemini inline requests have a total size limit. Base64 increases image
 # size by roughly one third, so this keeps the request comfortably below it.
 MAX_SCREENSHOT_BYTES = 12_000_000
+
+# Keep the output focused rather than turning it into a page inventory.
+MAX_SECONDARY_CAMPAIGNS = 3
 
 
 # ----------------------------------------------------------------------
@@ -57,9 +60,11 @@ You are analysing one competitor retail homepage using:
 1. A full-page screenshot showing the page as it appeared during capture.
 2. Extracted visible text from the same page.
 
-Use the screenshot as the authority for visual hierarchy, prominence and the
-active carousel state. Use the extracted text to confirm exact wording,
-discounts, category names and offer mechanics.
+Use the screenshot as the authority for visual hierarchy, prominence,
+visibility and the active carousel state.
+
+Use the extracted text only to confirm exact wording, discounts, category
+names and offer mechanics that are supported by the screenshot.
 
 PROMOTIONAL HIERARCHY
 
@@ -68,34 +73,60 @@ Evaluate page content in this order:
 1. The active hero banner or first major campaign visible in the screenshot.
 2. Large visible promotional modules near the top of the page.
 3. Repeated category promotions in the main page content.
-4. Lower-page secondary campaign tiles.
+4. Lower-page secondary campaign banners or tiles.
 5. Navigation, delivery messages, payment options, newsletter incentives and
    footer content.
+
+The screenshot overrides the extracted text when determining whether a
+campaign is visible.
+
+Extracted text may contain:
+
+- hidden carousel slides
+- inactive carousel content
+- accessibility text
+- off-screen promotional copy
+- navigation labels
+- product carousel labels
+- routine website functions
+
+Never include that material as an active or secondary campaign unless the
+corresponding promotion is clearly visible in the screenshot.
 
 Do not treat navigation labels, inactive carousel slides, delivery thresholds,
 payment options, account messages, newsletter incentives or footer links as
 the dominant campaign.
 
 Only mention a seasonal event such as Father's Day as a secondary campaign
-when it appears as a visible promotional module in the screenshot. A
-navigation link alone is not evidence of a seasonal campaign.
+when a substantial Father's Day banner, tile or promotional module is clearly
+visible in the screenshot.
 
-If the extracted text contains promotional copy that is not visibly
-represented in the screenshot, it may come from a hidden or inactive carousel
-slide. Do not treat that content as active or prominent.
+A navigation link or hidden carousel message alone is not evidence of an
+active seasonal campaign.
 
 If several promotional messages are visible, identify one dominant campaign
-based on size, vertical position, repetition and visual emphasis. Record other
-materially visible promotions as secondary campaigns.
+based on:
+
+- visual size
+- vertical position
+- prominence
+- repetition
+- strength of promotional treatment
+
+Record only the most meaningful visible activity as secondary campaigns.
 
 FIELD DEFINITIONS
 
 - "source": use the supplied source identifier exactly.
 
 - "primary_offer": the dominant visible campaign proposition or promotional
-  offer. Prioritise the active hero and major upper-page modules. If the hero
-  is a lifestyle proposition without a price discount, report that proposition
-  rather than substituting a delivery or newsletter sign-up offer.
+  offer.
+
+  Prioritise the active hero and major upper-page modules.
+
+  If the hero is a lifestyle proposition without a price discount, report the
+  lifestyle proposition rather than substituting a delivery threshold,
+  payment option or newsletter sign-up offer.
 
 - "category_focus": the principal product category or categories represented
   by the dominant visible campaign.
@@ -105,24 +136,81 @@ FIELD DEFINITIONS
 - "hook": the main creative or tactical approach, such as "price-led",
   "lifestyle", "new arrivals", "urgency", "clearance" or a concise combination.
 
-- "secondary_campaigns": visible secondary campaigns that receive meaningful
-  promotional treatment elsewhere on the page. Do not include navigation
-  labels or minor utility messages.
+- "secondary_campaigns": include no more than three meaningful secondary
+  advertising campaigns that are clearly visible in the screenshot.
 
-- "utility_messages": persistent service or conversion messages such as free
-  delivery, Afterpay, Click & Collect, loyalty prompts or newsletter sign-up
-  incentives.
+  A secondary campaign must have substantial visual treatment, such as:
 
-- "supporting_evidence": one concise sentence explaining which visible page
-  elements support the primary_offer decision.
+  - a large promotional banner
+  - a campaign tile
+  - a clearly grouped promotional section
+  - a repeated, visually prominent offer mechanic
 
-- "notable": one factual sentence summarising the dominant campaign and the
-  most relevant visible secondary activity. Do not infer commercial strategy,
-  business intent or performance beyond the supplied evidence.
+  Do not include:
+
+  - navigation links
+  - category tabs
+  - product carousel labels
+  - individual product cards
+  - inactive or hidden carousel slides
+  - text found only in the extracted page content
+  - routine merchandising headings such as "New In", "Top Brands",
+    "Latest Arrivals" or "Hot Deals This Week"
+  - generic category names without a meaningful campaign proposition
+
+  Consolidate closely related activity into one secondary campaign rather
+  than listing each individual category or product offer separately.
+
+  If no meaningful secondary campaign is clearly visible, return an empty
+  array.
+
+- "utility_messages": include only persistent commercial service or conversion
+  messages that could influence shopping behaviour, such as:
+
+  - free delivery thresholds
+  - Afterpay or another payment option
+  - Click & Collect
+  - quantified loyalty benefits
+  - quantified newsletter sign-up incentives
+  - returns or price guarantees
+
+  Exclude routine website functions such as:
+
+  - Contact Us
+  - Store Locator
+  - search
+  - account access
+  - privacy links
+  - terms and conditions
+  - footer navigation
+  - social media links
+
+- "supporting_evidence": write one concise sentence explaining which visible
+  page elements support the primary_offer decision.
+
+- "notable": write one concise factual sentence covering the dominant visible
+  campaign and, at most, one or two clearly visible secondary themes.
+
+  Do not mention a campaign in notable unless that campaign also appears in
+  secondary_campaigns.
+
+  Do not list routine categories, navigation entries, utility messages or
+  hidden carousel content.
+
+  Do not infer commercial strategy, business intent or performance beyond the
+  supplied evidence.
 
 - "capture_status": use "valid" when the screenshot shows a genuine retail
-  homepage. Use "blocked_or_error" when it shows an error page, bot challenge,
-  blank loading state, incomplete shell or unrelated fallback content.
+  homepage.
+
+  Use "blocked_or_error" when the screenshot shows:
+
+  - an error page
+  - a bot challenge
+  - a blank loading state
+  - an incomplete shell
+  - unrelated fallback content
+  - a page that is too incomplete to assess reliably
 
 If capture_status is "blocked_or_error":
 
@@ -131,8 +219,9 @@ If capture_status is "blocked_or_error":
 - Use empty arrays for secondary_campaigns and utility_messages.
 - Briefly explain the visible issue in supporting_evidence and notable.
 
-Return only the structured JSON response. Do not include markdown,
-commentary, code fences or a preamble.
+Return only the structured JSON response.
+
+Do not include markdown, commentary, code fences or a preamble.
 """.strip()
 
 
@@ -242,6 +331,136 @@ def get_screenshot_path(source: str) -> str:
     )
 
 
+def clean_string_list(values) -> list:
+    """
+    Remove blank and duplicate values while preserving the original order.
+    """
+
+    if not isinstance(values, list):
+        return []
+
+    cleaned = []
+    seen = set()
+
+    for value in values:
+        if not isinstance(value, str):
+            continue
+
+        value = value.strip()
+
+        if not value:
+            continue
+
+        key = value.casefold()
+
+        if key in seen:
+            continue
+
+        seen.add(key)
+        cleaned.append(value)
+
+    return cleaned
+
+
+def normalise_observation(
+    result: dict,
+    source: str,
+) -> dict:
+    """
+    Ensure Gemini's response has the expected fields and enforce output limits.
+    """
+
+    if not isinstance(result, dict):
+        return {
+            "source": source,
+            "primary_offer": "Analysis failed",
+            "category_focus": "N/A",
+            "hero_theme": "N/A",
+            "hook": "N/A",
+            "secondary_campaigns": [],
+            "utility_messages": [],
+            "supporting_evidence": (
+                "Gemini returned an invalid response structure."
+            ),
+            "notable": (
+                "Gemini returned an invalid response structure."
+            ),
+            "capture_status": "blocked_or_error",
+        }
+
+    capture_status = result.get(
+        "capture_status",
+        "blocked_or_error",
+    )
+
+    if capture_status not in (
+        "valid",
+        "blocked_or_error",
+    ):
+        capture_status = "blocked_or_error"
+
+    secondary_campaigns = clean_string_list(
+        result.get("secondary_campaigns", [])
+    )[:MAX_SECONDARY_CAMPAIGNS]
+
+    utility_messages = clean_string_list(
+        result.get("utility_messages", [])
+    )
+
+    normalised = {
+        "source": source,
+        "primary_offer": str(
+            result.get(
+                "primary_offer",
+                "Analysis unavailable",
+            )
+        ).strip(),
+        "category_focus": str(
+            result.get(
+                "category_focus",
+                "N/A",
+            )
+        ).strip(),
+        "hero_theme": str(
+            result.get(
+                "hero_theme",
+                "N/A",
+            )
+        ).strip(),
+        "hook": str(
+            result.get(
+                "hook",
+                "N/A",
+            )
+        ).strip(),
+        "secondary_campaigns": secondary_campaigns,
+        "utility_messages": utility_messages,
+        "supporting_evidence": str(
+            result.get(
+                "supporting_evidence",
+                "No supporting evidence was returned.",
+            )
+        ).strip(),
+        "notable": str(
+            result.get(
+                "notable",
+                "No observation was returned.",
+            )
+        ).strip(),
+        "capture_status": capture_status,
+    }
+
+    if capture_status == "blocked_or_error":
+        normalised["primary_offer"] = "Capture unavailable"
+        normalised["category_focus"] = "N/A"
+        normalised["hero_theme"] = "N/A"
+        normalised["hook"] = "N/A"
+        normalised["secondary_campaigns"] = []
+        normalised["utility_messages"] = []
+
+    return normalised
+
+
 def analyse_one(
     api_key: str,
     source: str,
@@ -313,7 +532,7 @@ def analyse_one(
             }
         ],
         "generationConfig": {
-            # Low temperature helps keep weekly classifications consistent.
+            # Low temperature supports comparable weekly classifications.
             "temperature": 0.1,
             "response_mime_type": "application/json",
             "response_schema": RESPONSE_SCHEMA,
@@ -347,14 +566,20 @@ def analyse_one(
 
                 result = json.loads(response_text)
 
-                # Keep the source identifier controlled by the pipeline.
-                result["source"] = source
-
-                return result
+                return normalise_observation(
+                    result=result,
+                    source=source,
+                )
 
             last_error = response.text[:500]
 
-            if response.status_code in (429, 500, 502, 503, 504):
+            if response.status_code in (
+                429,
+                500,
+                502,
+                503,
+                504,
+            ):
                 wait_seconds = 2 * (attempt + 1)
 
                 print(
@@ -373,14 +598,19 @@ def analyse_one(
 
             break
 
-        except requests.RequestException as error:
+        except (
+            requests.RequestException,
+            KeyError,
+            ValueError,
+            json.JSONDecodeError,
+        ) as error:
             last_error = str(error)
 
             if attempt < 2:
                 wait_seconds = 2 * (attempt + 1)
 
                 print(
-                    f"  {source}: Gemini request failed; retrying in "
+                    f"  {source}: Gemini response failed; retrying in "
                     f"{wait_seconds} seconds ({error})"
                 )
 
@@ -430,7 +660,11 @@ def main() -> None:
             "Run the capture step first."
         )
 
-    with open(INPUT_FILE, "r", encoding="utf-8") as captured_file:
+    with open(
+        INPUT_FILE,
+        "r",
+        encoding="utf-8",
+    ) as captured_file:
         captured = json.load(captured_file)
 
     if not isinstance(captured, list):
@@ -453,10 +687,14 @@ def main() -> None:
         screenshot_path = get_screenshot_path(source)
 
         if os.path.exists(screenshot_path):
-            screenshot_size = os.path.getsize(screenshot_path)
+            screenshot_size = os.path.getsize(
+                screenshot_path
+            )
+
             screenshot_details = (
                 f"{screenshot_size:,} bytes"
             )
+
         else:
             screenshot_details = "missing"
 
@@ -478,7 +716,9 @@ def main() -> None:
         print(
             f"  {source}: "
             f"{observation['capture_status']} | "
-            f"{observation['primary_offer']}"
+            f"{observation['primary_offer']} | "
+            f"{len(observation['secondary_campaigns'])} "
+            f"secondary campaigns"
         )
 
     with open(
